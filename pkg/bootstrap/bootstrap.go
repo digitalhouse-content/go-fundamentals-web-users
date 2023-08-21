@@ -8,7 +8,7 @@ import (
 	"github.com/digitalhouse-content/go-fundamentals-web-users/internal/user"
 )
 
-func NewLogger() *log.Logger{
+func NewLogger() *log.Logger {
 	return log.New(os.Stdout, "", log.LstdFlags|log.Lshortfile)
 }
 

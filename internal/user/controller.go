@@ -2,13 +2,11 @@ package user
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
-	"net/http"
+	"errors"
 )
 
 type (
-	Controller func(w http.ResponseWriter, r *http.Request)
+	Controller func(ctx context.Context, request interface{}) (interface{}, error)
 
 	Endpoints struct {
 		Create Controller
@@ -22,79 +20,46 @@ type (
 	}
 )
 
-func MakeEndpoints(ctx context.Context, s Service) Controller {
-	return func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
-			GetAllUser(ctx, s, w)
-		case http.MethodPost:
-			decode := json.NewDecoder(r.Body)
-			var req CreateReq
-			if err := decode.Decode(&req); err != nil {
-				MsgResponse(w, http.StatusBadRequest, err.Error())
-				return
-			}
-			PostUser(ctx, s, w, req)
-		default:
-			InvalidMethod(w)
+func MakeEndpoints(ctx context.Context, s Service) Endpoints {
+	return Endpoints{
+		Create: makeCreateEndpoint(s),
+		GetAll: makeGetAllEndpoint(s),
+	}
+}
 
+func makeGetAllEndpoint(s Service) Controller {
+
+	return func(ctx context.Context, request interface{}) (interface{}, error) {
+		users, err := s.GetAll(ctx)
+		if err != nil {
+			return nil, err
 		}
+
+		return users, nil
 	}
 }
 
-func GetAllUser(ctx context.Context, s Service, w http.ResponseWriter) {
-	users, err := s.GetAll(ctx)
-	if err != nil {
-		MsgResponse(w, http.StatusInternalServerError, err.Error())
-		return
+func makeCreateEndpoint(s Service) Controller {
+	return func(ctx context.Context, request interface{}) (interface{}, error) {
+		req := request.(CreateReq)
+
+		if req.FirstName == "" {
+			return nil, errors.New("first name is required")
+		}
+
+		if req.LastName == "" {
+			return nil, errors.New("last name is required")
+		}
+
+		if req.Email == "" {
+			return nil, errors.New("email is required")
+		}
+
+		user, err := s.Create(ctx, req.FirstName, req.LastName, req.Email)
+		if err != nil {
+			return nil, err
+		}
+
+		return user, nil
 	}
-
-	DataResponse(w, http.StatusOK, users)
-}
-
-func PostUser(ctx context.Context, s Service, w http.ResponseWriter, data interface{}) {
-	req := data.(CreateReq)
-
-	if req.FirstName == "" {
-		MsgResponse(w, http.StatusBadRequest, "first name is required")
-		return
-	}
-
-	if req.LastName == "" {
-		MsgResponse(w, http.StatusBadRequest, "last name is required")
-		return
-	}
-
-	if req.Email == "" {
-		MsgResponse(w, http.StatusBadRequest, "email is required")
-		return
-	}
-
-	user, err := s.Create(ctx, req.FirstName, req.LastName, req.Email)
-	if err != nil {
-		MsgResponse(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	DataResponse(w, http.StatusCreated, user)
-}
-
-func InvalidMethod(w http.ResponseWriter) {
-	status := http.StatusNotFound
-	w.WriteHeader(status)
-	fmt.Fprintf(w, `{"status": %d, "message": "method doesn't exist"}`, status)
-}
-
-func MsgResponse(w http.ResponseWriter, status int, message string) {
-	w.WriteHeader(status)
-	fmt.Fprintf(w, `{"status": %d, "message":"%s"}`, status, message)
-}
-
-func DataResponse(w http.ResponseWriter, status int, users interface{}) {
-	value, err := json.Marshal(users)
-	if err != nil {
-		MsgResponse(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	w.WriteHeader(status)
-	fmt.Fprintf(w, `{"status": %d, "data":%s}`, status, value)
 }
