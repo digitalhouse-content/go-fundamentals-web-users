@@ -4,44 +4,86 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
+	"strconv"
 
 	"github.com/digitalhouse-content/go-fundamentals-web-users/internal/user"
 	"github.com/digitalhouse-content/go-fundamentals-web-users/pkg/transport"
 )
 
 func NewUserHTTPServer(ctx context.Context, router *http.ServeMux, endpoints user.Endpoints) {
-	router.HandleFunc("/users", UserServer(ctx, endpoints))
+	router.HandleFunc("/users/", UserServer(ctx, endpoints))
 }
 
 func UserServer(ctx context.Context, endpoints user.Endpoints) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		tran := transport.New(w, r, ctx)
+		url := r.URL.Path
+		log.Println(r.Method, ": ", url)
+		path, pathSize := transport.Clean(url)
+
+		params := make(map[string] string)
+		if pathSize == 4 && path[2] != ""{
+			params["userID"] = path[2]
+		}
+
+		tran := transport.New(w, r, context.WithValue(ctx, "params", params))
+
+		var end user.Controller
+		var deco func(ctx context.Context, r *http.Request) (interface{}, error)
 
 		switch r.Method {
 		case http.MethodGet:
-			tran.Server(
-				transport.Endpoint(endpoints.GetAll),
-				decodeGetAllUser,
-				encodeResponse,
-				encodeError)
-			return
+			switch pathSize {
+			case 3:
+				end = endpoints.GetAll
+				deco = decodeGetAllUser
+				case 4:
+				end = endpoints.Get
+				deco = decodeGetUser
+			}
+			
 		case http.MethodPost:
-			tran.Server(
-				transport.Endpoint(endpoints.Create),
-				decodeCreateUser,
-				encodeResponse,
-				encodeError)
-			return
+			switch pathSize{
+			case 3:
+				end = endpoints.Create
+				deco = decodeCreateUser
+			}
+			
 
 		}
 
-		InvalidMethod(w)
+		if end != nil && deco != nil {
+			tran.Server(
+				transport.Endpoint(end),
+				deco,
+				encodeResponse,
+				encodeError)
+		}else{
+			InvalidMethod(w)
+		}
+		
+
+		
 	}
 }
 
+func decodeGetUser(ctx context.Context, r *http.Request) (interface{}, error) {
+	params := ctx.Value("params").(map[string] string)
+	
+	id, err := strconv.ParseUint(params["userID"], 10, 64)
+	if err != nil {
+		return nil, err
+	}
+
+	return user.GetReq{
+		ID: id,
+	}, nil
+}
+
 func decodeGetAllUser(ctx context.Context, r *http.Request) (interface{}, error) {
+	fmt.Println("entra")
 	return nil, nil
 }
 
