@@ -3,6 +3,8 @@ package user
 import (
 	"context"
 	"errors"
+
+	"github.com/digitalhouse-content/go-fundamentals-response/response"
 )
 
 type (
@@ -11,7 +13,8 @@ type (
 	Endpoints struct {
 		Create Controller
 		GetAll Controller
-		Get Controller
+		Get    Controller
+		Update Controller
 	}
 
 	GetReq struct {
@@ -23,13 +26,21 @@ type (
 		LastName  string `json:"last_name"`
 		Email     string `json:"email"`
 	}
+
+	UpdateReq struct {
+		ID        uint64
+		FirstName *string `json:"first_name"`
+		LastName  *string `json:"last_name"`
+		Email     *string `json:"email"`
+	}
 )
 
 func MakeEndpoints(ctx context.Context, s Service) Endpoints {
 	return Endpoints{
 		Create: makeCreateEndpoint(s),
 		GetAll: makeGetAllEndpoint(s),
-		Get: makeGetEndpoint(s),
+		Get:    makeGetEndpoint(s),
+		Update: makeUpdateEndpoint(s),
 	}
 }
 
@@ -38,23 +49,19 @@ func makeCreateEndpoint(s Service) Controller {
 		req := request.(CreateReq)
 
 		if req.FirstName == "" {
-			return nil, errors.New("first name is required")
+			return nil, response.BadRequest(ErrFirstNameRequired.Error())
 		}
 
 		if req.LastName == "" {
-			return nil, errors.New("last name is required")
-		}
-
-		if req.Email == "" {
-			return nil, errors.New("email is required")
+			return nil, response.BadRequest(ErrLastNameRequired.Error())
 		}
 
 		user, err := s.Create(ctx, req.FirstName, req.LastName, req.Email)
 		if err != nil {
-			return nil, err
+			return nil, response.InternalServerError(err.Error())
 		}
 
-		return user, nil
+		return response.Created("success", user), nil
 	}
 }
 
@@ -63,10 +70,10 @@ func makeGetAllEndpoint(s Service) Controller {
 	return func(ctx context.Context, request interface{}) (interface{}, error) {
 		users, err := s.GetAll(ctx)
 		if err != nil {
-			return nil, err
+			return nil, response.InternalServerError(err.Error())
 		}
 
-		return users, nil
+		return response.OK("success", users), nil
 	}
 }
 
@@ -77,11 +84,38 @@ func makeGetEndpoint(s Service) Controller {
 
 		user, err := s.Get(ctx, req.ID)
 		if err != nil {
-			return nil, err
+
+			if errors.As(err, &ErrNotFound{}) {
+				return nil, response.NotFound(err.Error())
+			}
+
+			return nil, response.InternalServerError(err.Error())
 		}
 
-		return user, nil
+		return response.OK("success", user), nil
 	}
 }
 
+func makeUpdateEndpoint(s Service) Controller {
+	return func(ctx context.Context, request interface{}) (interface{}, error) {
+		req := request.(UpdateReq)
 
+		if req.FirstName != nil && *req.FirstName == "" {
+			return nil, response.BadRequest(ErrFirstNameRequired.Error())
+		}
+
+		if req.LastName != nil && *req.LastName == "" {
+			return nil, response.BadRequest(ErrLastNameRequired.Error())
+		}
+
+		if err := s.Update(ctx, req.ID, req.FirstName, req.LastName, req.Email); err != nil {
+			if errors.As(err, &ErrNotFound{}) {
+				return nil, response.NotFound(err.Error())
+			}
+
+			return nil, response.InternalServerError(err.Error())
+		}
+
+		return response.OK("success", nil), nil
+	}
+}

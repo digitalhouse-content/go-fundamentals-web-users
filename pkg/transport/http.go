@@ -58,8 +58,8 @@ func (t *trasport) Server(
 	}
 }
 
-func Clean(url string) ([]string, int){
-	if url[0] != '/'{
+func Clean(url string) ([]string, int) {
+	if url[0] != '/' {
 		url = "/" + url
 	}
 
@@ -67,7 +67,7 @@ func Clean(url string) ([]string, int){
 		url = url + "/"
 	}
 
-	parts := strings.Split(url,"/")
+	parts := strings.Split(url, "/")
 
 	return parts, len(parts)
 }

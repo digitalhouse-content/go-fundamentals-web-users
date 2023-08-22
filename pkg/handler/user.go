@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/digitalhouse-content/go-fundamentals-response/response"
 	"github.com/digitalhouse-content/go-fundamentals-web-users/internal/user"
 	"github.com/digitalhouse-content/go-fundamentals-web-users/pkg/transport"
 )
@@ -23,8 +24,8 @@ func UserServer(ctx context.Context, endpoints user.Endpoints) func(w http.Respo
 		log.Println(r.Method, ": ", url)
 		path, pathSize := transport.Clean(url)
 
-		params := make(map[string] string)
-		if pathSize == 4 && path[2] != ""{
+		params := make(map[string]string)
+		if pathSize == 4 && path[2] != "" {
 			params["userID"] = path[2]
 		}
 
@@ -39,19 +40,25 @@ func UserServer(ctx context.Context, endpoints user.Endpoints) func(w http.Respo
 			case 3:
 				end = endpoints.GetAll
 				deco = decodeGetAllUser
-				case 4:
+			case 4:
 				end = endpoints.Get
 				deco = decodeGetUser
 			}
-			
+
 		case http.MethodPost:
-			switch pathSize{
+			switch pathSize {
 			case 3:
 				end = endpoints.Create
 				deco = decodeCreateUser
 			}
-			
 
+		case http.MethodPatch:
+			switch pathSize {
+			case 4:
+				end = endpoints.Update
+				deco = decoUpdateUser
+
+			}
 		}
 
 		if end != nil && deco != nil {
@@ -60,18 +67,16 @@ func UserServer(ctx context.Context, endpoints user.Endpoints) func(w http.Respo
 				deco,
 				encodeResponse,
 				encodeError)
-		}else{
+		} else {
 			InvalidMethod(w)
 		}
-		
 
-		
 	}
 }
 
 func decodeGetUser(ctx context.Context, r *http.Request) (interface{}, error) {
-	params := ctx.Value("params").(map[string] string)
-	
+	params := ctx.Value("params").(map[string]string)
+
 	id, err := strconv.ParseUint(params["userID"], 10, 64)
 	if err != nil {
 		return nil, err
@@ -80,6 +85,26 @@ func decodeGetUser(ctx context.Context, r *http.Request) (interface{}, error) {
 	return user.GetReq{
 		ID: id,
 	}, nil
+}
+
+func decoUpdateUser(ctx context.Context, r *http.Request) (interface{}, error) {
+	var req user.UpdateReq
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		return nil, fmt.Errorf("invalid request format: '%v'", err.Error())
+	}
+
+	params := ctx.Value("params").(map[string]string)
+
+	id, err := strconv.ParseUint(params["userID"], 10, 64)
+	if err != nil {
+		return nil, err
+	}
+
+	req.ID = id
+
+	return req, nil
+
 }
 
 func decodeGetAllUser(ctx context.Context, r *http.Request) (interface{}, error) {
@@ -98,22 +123,20 @@ func decodeCreateUser(ctx context.Context, r *http.Request) (interface{}, error)
 }
 
 func encodeResponse(ctx context.Context, w http.ResponseWriter, resp interface{}) error {
-	data, err := json.Marshal(resp)
-	if err != nil {
-		return err
-	}
-	status := http.StatusOK
-	w.WriteHeader(status)
+
+	r := resp.(response.Response)
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	fmt.Fprintf(w, `{"status": %d, "data":%s}`, status, data)
-	return nil
+	w.WriteHeader(r.StatusCode())
+
+	return json.NewEncoder(w).Encode(resp)
 }
 
 func encodeError(_ context.Context, err error, w http.ResponseWriter) {
-	status := http.StatusInternalServerError
-	w.WriteHeader(status)
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	fmt.Fprintf(w, `{"status": %d, "message":"%s"}`, status, err.Error())
+	resp := err.(response.Response)
+
+	w.WriteHeader(resp.StatusCode())
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 func InvalidMethod(w http.ResponseWriter) {
