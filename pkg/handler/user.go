@@ -3,9 +3,11 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 
 	"github.com/digitalhouse-content/go-fundamentals-response/response"
@@ -28,6 +30,8 @@ func UserServer(ctx context.Context, endpoints user.Endpoints) func(w http.Respo
 		if pathSize == 4 && path[2] != "" {
 			params["userID"] = path[2]
 		}
+
+		params["token"] = r.Header.Get("Authorization")
 
 		tran := transport.New(w, r, context.WithValue(ctx, "params", params))
 
@@ -76,10 +80,13 @@ func UserServer(ctx context.Context, endpoints user.Endpoints) func(w http.Respo
 
 func decodeGetUser(ctx context.Context, r *http.Request) (interface{}, error) {
 	params := ctx.Value("params").(map[string]string)
+	if err := tokenVerify(params["token"]); err != nil {
+		return nil, response.Unauthorized(err.Error())
+	}
 
 	id, err := strconv.ParseUint(params["userID"], 10, 64)
 	if err != nil {
-		return nil, err
+		return nil, response.BadRequest(err.Error())
 	}
 
 	return user.GetReq{
@@ -91,14 +98,17 @@ func decoUpdateUser(ctx context.Context, r *http.Request) (interface{}, error) {
 	var req user.UpdateReq
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		return nil, fmt.Errorf("invalid request format: '%v'", err.Error())
+		return nil, response.BadRequest(fmt.Sprintf("invalid request format: '%v'", err.Error()))
 	}
 
 	params := ctx.Value("params").(map[string]string)
+	if err := tokenVerify(params["token"]); err != nil {
+		return nil, response.Unauthorized(err.Error())
+	}
 
 	id, err := strconv.ParseUint(params["userID"], 10, 64)
 	if err != nil {
-		return nil, err
+		return nil, response.BadRequest(err.Error())
 	}
 
 	req.ID = id
@@ -108,18 +118,33 @@ func decoUpdateUser(ctx context.Context, r *http.Request) (interface{}, error) {
 }
 
 func decodeGetAllUser(ctx context.Context, r *http.Request) (interface{}, error) {
-	fmt.Println("entra")
+	params := ctx.Value("params").(map[string]string)
+	if err := tokenVerify(params["token"]); err != nil {
+		return nil, response.Unauthorized(err.Error())
+	}
+
 	return nil, nil
 }
 
 func decodeCreateUser(ctx context.Context, r *http.Request) (interface{}, error) {
+	params := ctx.Value("params").(map[string]string)
+	if err := tokenVerify(params["token"]); err != nil {
+		return nil, response.Unauthorized(err.Error())
+	}
 
 	var req user.CreateReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		return nil, fmt.Errorf("invalid request format: '%v'", err.Error())
+		return nil, response.BadRequest(fmt.Sprintf("invalid request format: '%v'", err.Error()))
 	}
 
 	return req, nil
+}
+
+func tokenVerify(token string) error {
+	if os.Getenv("TOKEN") != token {
+		return errors.New("invalid token")
+	}
+	return nil
 }
 
 func encodeResponse(ctx context.Context, w http.ResponseWriter, resp interface{}) error {

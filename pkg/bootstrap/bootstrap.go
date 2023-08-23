@@ -1,35 +1,24 @@
 package bootstrap
 
 import (
+	"database/sql"
 	"log"
 	"os"
 
-	"github.com/digitalhouse-content/go-fundamentals-web-users/internal/domain"
-	"github.com/digitalhouse-content/go-fundamentals-web-users/internal/user"
+	_ "github.com/go-sql-driver/mysql"
 )
 
 func NewLogger() *log.Logger {
 	return log.New(os.Stdout, "", log.LstdFlags|log.Lshortfile)
 }
 
-func NewDB() user.DB {
-	return user.DB{
-		Users: []domain.User{{
-			ID:        1,
-			FirstName: "Nahuel",
-			LastName:  "Costamagna",
-			Email:     "nahuel@domain.com",
-		}, {
-			ID:        2,
-			FirstName: "Eren",
-			LastName:  "Jaeger",
-			Email:     "eren@domain.com",
-		}, {
-			ID:        3,
-			FirstName: "Paco",
-			LastName:  "Costa",
-			Email:     "paco@domain.com",
-		}},
-		MaxUserID: 3,
+func NewDB() (*sql.DB, error) {
+
+	dbURL := os.ExpandEnv("$DATABASE_USER:$DATABASE_PASSWORD@tcp($DATABASE_HOST:$DATABASE_PORT)/$DATABASE_NAME")
+	db, err := sql.Open("mysql", dbURL)
+	if err != nil {
+		return nil, err
 	}
+
+	return db, nil
 }
